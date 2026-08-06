@@ -171,10 +171,10 @@ georank-mvp/
 │   │   └── i18n/               # 国际化（中文/英文）
 │   └── package.json
 │
-├── .ai/                        # 项目文档（AI 辅助开发）
-│   ├── temp/                   # 阶段产出文档
-│   ├── records/                # 工程师工作日志
-│   └── reports/                # QA/评审报告
+├── docs/                       # 项目文档
+│   ├── constraints/            # 技术约束（架构/数据库/UI）
+│   ├── reports/                # 历史 QA/评审/部署报告
+│   └── requirement-v4.md       # 当前重构需求
 │
 └── README.md
 ```
@@ -280,13 +280,11 @@ georank-mvp/
 ## 七、文档
 
 ### 项目文档
-- [需求文档](.ai/temp/requirement.md)
-- [架构设计](.ai/temp/architect.md)
-- [数据库设计](.ai/temp/db-design.md)
-- [UI 设计](.ai/temp/ui-design.md)
-- [接口契约](.ai/temp/api-contract.md)
-- [技术方案](.ai/temp/plan.md)
-- [任务分解](.ai/temp/wbs.md)
+- [重构需求（v4.0）](docs/requirement-v4.md)
+- [架构约束](docs/constraints/architect_constraint.md)
+- [数据库约束](docs/constraints/db_constraint.md)
+- [UI 约束](docs/constraints/ui_constraint.md)
+- [技术实现方案](docs/TECHNICAL-IMPLEMENTATION-PYTHON.md)
 
 ### 参考资料
 - [FastAPI 文档](https://fastapi.tiangolo.com/)
