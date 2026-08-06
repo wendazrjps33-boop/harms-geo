@@ -19,7 +19,7 @@ from app.services.statistical_analysis import (
     compare_runs,
 )
 from app.services.export import export_statistical_csv, export_statistical_pdf
-from app.middleware.subscription_gate import require_feature, require_quota
+from app.middleware.subscription_gate import require_feature, require_quota, require_feature_with_quota
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 

@@ -83,7 +83,7 @@ export default function TipTapEditor({
       const currentContent = editor.getHTML();
       // 仅当外部内容与编辑器内容不同时更新，避免光标跳动
       if (currentContent !== content) {
-        editor.commands.setContent(content, false);
+        editor.commands.setContent(content, { emitUpdate: false });
       }
     }
   }, [editor, content]);

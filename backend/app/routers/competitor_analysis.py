@@ -7,7 +7,7 @@ from app.models.user import User
 from app.models.brand import Brand
 from app.models.report import AnalysisRun
 from app.services.competitor_analysis import run_competitor_comparison, save_comparison_result
-from app.middleware.subscription_gate import require_feature
+from app.middleware.subscription_gate import require_feature, require_feature_with_quota
 
 router = APIRouter(prefix="/api/competitor-analysis", tags=["competitor-analysis"])
 
@@ -23,7 +23,7 @@ class ComparisonRequest(BaseModel):
 def start_comparison(
     brand_id: int,
     body: ComparisonRequest,
-    user: User = Depends(require_feature("competitor_analysis")),
+    user: User = Depends(require_feature_with_quota("competitor_analysis")),
     db: Session = Depends(get_db)
 ):
     """Start competitor comparison analysis."""

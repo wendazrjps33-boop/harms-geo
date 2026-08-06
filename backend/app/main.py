@@ -8,7 +8,6 @@ from sqlalchemy import text
 
 from app.database import engine, Base, SessionLocal
 from app.routers import auth, brands, reports, analysis, competitor_analysis, subscription, usage, content, crawler, upload, team, billing_history, api_keys, white_label
-from app.scheduler import start_scheduler
 from app.middleware.csrf import CSRFMiddleware, generate_csrf_token
 import app.models  # Import all models to register them with SQLAlchemy
 
@@ -26,9 +25,8 @@ async def lifespan(app: FastAPI):
             db.commit()
     except Exception:
         pass
-    scheduler = start_scheduler()
+    # Scheduled tasks are handled by Celery beat (see celery_app.py)
     yield
-    scheduler.shutdown()
 
 
 app = FastAPI(title="GeoRank API", version="1.0.0", lifespan=lifespan)

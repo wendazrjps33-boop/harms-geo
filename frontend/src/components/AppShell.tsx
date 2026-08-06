@@ -4,8 +4,8 @@ import { useState, useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useI18n } from '@/app/i18n/context';
-import { isAuthenticated, logout } from '@/app/services/auth';
-import LanguageSwitcher from '@/app/components/LanguageSwitcher';
+import { isAuthenticated, logout } from '@/services/auth';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { cn } from '@/lib/cn';
 
 interface NavChild {

@@ -147,12 +147,41 @@ def check_visibility(brand_name: str, query: str, engine: str = "openai") -> dic
     return fn(brand_name, query)
 
 
-def generate_text(system_prompt: str, user_prompt: str, engine: str = "deepseek", timeout: float = 120.0) -> str:
-    """Send a prompt to an LLM and return the raw text response."""
+def generate_text(
+    system_prompt: str,
+    user_prompt: str,
+    engine: str = "deepseek",
+    timeout: float = 30.0,
+    max_retries: int = 2,
+) -> str:
+    """Send a prompt to an LLM and return the raw text response.
+
+    Includes retry with exponential backoff on transient failures.
+    """
+    import time
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            return _call_llm(engine, messages, timeout)
+        except (TimeoutError, ConnectionError, Exception) as e:
+            last_error = e
+            if attempt < max_retries:
+                wait = 2 ** attempt
+                logger.warning("LLM call failed (attempt %d/%d), retrying in %ds: %s", attempt + 1, max_retries + 1, wait, e)
+                time.sleep(wait)
+
+    raise last_error
+
+
+def _call_llm(engine: str, messages: list, timeout: float) -> str:
+    """Execute a single LLM call for the given engine."""
+    logger.info("generate_text called with engine=%s", engine)
     if engine == "deepseek":
         client = OpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/v1", timeout=timeout)
         response = client.chat.completions.create(model="deepseek-chat", messages=messages, max_tokens=8000)
@@ -171,12 +200,13 @@ def generate_text(system_prompt: str, user_prompt: str, engine: str = "deepseek"
         return response.choices[0].message.content or ""
     elif engine == "claude":
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY, timeout=timeout)
-        message = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=8000, messages=[{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}])
+        message = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=8000, messages=messages)
         return message.content[0].text if message.content else ""
     elif engine == "gemini":
         genai.configure(api_key=settings.GOOGLE_API_KEY)
         model = genai.GenerativeModel("gemini-pro")
-        response = model.generate_content(f"{system_prompt}\n\n{user_prompt}")
+        combined = "\n\n".join(m["content"] for m in messages)
+        response = model.generate_content(combined)
         return response.text or ""
     else:
         raise ValueError(f"Unknown engine: {engine}. Supported: {list(ENGINE_MAP.keys())}")

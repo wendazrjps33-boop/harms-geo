@@ -6,6 +6,7 @@ from app.models.competitor import BrandCompetitor
 from app.models.subscription import SubscriptionPlan, UserSubscription, UsageRecord, TeamMember
 from app.models.content import GeneratedContent, ContentDistribution, AdoptionCheck, BrandProfile
 from app.models.addon_purchase import AddonPurchase
+from app.models.webhook_event import WebhookEvent
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "AdoptionCheck",
     "BrandProfile",
     "AddonPurchase",
+    "WebhookEvent",
 ]

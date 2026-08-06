@@ -118,3 +118,46 @@ def require_quota(dimension: str):
         return user
 
     return dependency
+
+
+def require_feature_with_quota(feature_name: str, dimension: str | None = None):
+    """组合依赖：功能门控 + 配额检查（单个 Depends 完成双重校验）。
+
+    Args:
+        feature_name: FEATURE_PLAN_MAP 中的功能名
+        dimension: 配额维度（如 "content"），为 None 时仅检查功能权限
+    """
+    def dependency(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ):
+        # 1. 功能门控
+        plan_code = get_user_plan_code(db, user.id)
+        allowed_plans = FEATURE_PLAN_MAP.get(feature_name, [])
+        if plan_code not in allowed_plans:
+            required = " or ".join(allowed_plans)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "FEATURE_NOT_AVAILABLE",
+                    "message": f"当前计划不支持此功能，需要 {required} 计划",
+                    "details": {"current_plan": plan_code, "feature": feature_name},
+                },
+            )
+
+        # 2. 配额检查（仅当 dimension 指定时）
+        if dimension and not usage_tracker.check_quota(db, user.id, dimension):
+            limit = usage_tracker.get_limit(db, user.id, dimension)
+            used = usage_tracker.get_count(user.id, dimension)
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "code": "QUOTA_EXCEEDED",
+                    "message": f"{dimension} 配额已用完",
+                    "details": {"current": used, "limit": limit, "plan": plan_code},
+                },
+            )
+
+        return user
+
+    return dependency

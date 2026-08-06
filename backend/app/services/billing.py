@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.subscription import UserSubscription, SubscriptionPlan
+from app.models.webhook_event import WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -98,17 +99,36 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str) -> dict:
 
     event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
 
+    event_id = event.get("id", "")
     event_type = event["type"]
     data = event["data"]["object"]
 
-    if event_type == "checkout.session.completed":
-        _handle_checkout_completed(db, data)
-    elif event_type == "invoice.payment_succeeded":
-        _handle_payment_succeeded(db, data)
-    elif event_type == "invoice.payment_failed":
-        _handle_payment_failed(db, data)
-    elif event_type == "customer.subscription.deleted":
-        _handle_subscription_deleted(db, data)
+    # 幂等性检查：已处理的事件直接返回
+    existing = db.query(WebhookEvent).filter(WebhookEvent.event_id == event_id).first()
+    if existing:
+        logger.info("Webhook event %s already processed, skipping", event_id)
+        return {"received": True, "event_type": event_type, "duplicate": True}
+
+    try:
+        if event_type == "checkout.session.completed":
+            _handle_checkout_completed(db, data)
+        elif event_type == "invoice.payment_succeeded":
+            _handle_payment_succeeded(db, data)
+        elif event_type == "invoice.payment_failed":
+            _handle_payment_failed(db, data)
+        elif event_type == "customer.subscription.deleted":
+            _handle_subscription_deleted(db, data)
+
+        # 记录已处理事件
+        db.add(WebhookEvent(event_id=event_id, event_type=event_type, status="processed"))
+        db.commit()
+
+    except Exception as e:
+        # 记录失败事件，便于排查
+        db.rollback()
+        db.add(WebhookEvent(event_id=event_id, event_type=event_type, status="failed", error_message=str(e)))
+        db.commit()
+        raise
 
     return {"received": True, "event_type": event_type}
 

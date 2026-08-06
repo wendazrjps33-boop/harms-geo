@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import re
-import threading
+import redis as redis_lib
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ from app.schemas.content import (
     BrandProfileResponse,
 )
 from app.services import content_generator, usage_tracker
-from app.middleware.subscription_gate import require_feature, require_quota, get_user_plan_code
+from app.middleware.subscription_gate import require_feature, require_quota, require_feature_with_quota, get_user_plan_code
 from app import task_store
 
 logger = logging.getLogger(__name__)
@@ -36,16 +36,22 @@ router = APIRouter(prefix="/api/content", tags=["content"])
 
 PREMIUM_ENGINES = {"claude", "gemini"}
 
-_generation_locks: dict[tuple[int, int], threading.Lock] = {}
-_generation_locks_guard = threading.Lock()
+# Redis-based distributed generation lock (replaces in-memory threading.Lock)
+_gen_lock_redis = redis_lib.from_url(settings.REDIS_URL, password=settings.REDIS_PASSWORD, decode_responses=True)
+_GEN_LOCK_TTL = 300  # 5 minutes auto-expire
+_GEN_LOCK_PREFIX = "gen_lock:"
 
 
-def _get_generation_lock(user_id: int, brand_id: int) -> threading.Lock:
-    key = (user_id, brand_id)
-    with _generation_locks_guard:
-        if key not in _generation_locks:
-            _generation_locks[key] = threading.Lock()
-        return _generation_locks[key]
+def _acquire_generation_lock(user_id: int, brand_id: int) -> bool:
+    """Try to acquire generation lock via Redis SETNX. Returns True if acquired."""
+    key = f"{_GEN_LOCK_PREFIX}{user_id}:{brand_id}"
+    return _gen_lock_redis.set(key, "1", nx=True, ex=_GEN_LOCK_TTL)
+
+
+def _release_generation_lock(user_id: int, brand_id: int) -> None:
+    """Release generation lock."""
+    key = f"{_GEN_LOCK_PREFIX}{user_id}:{brand_id}"
+    _gen_lock_redis.delete(key)
 
 
 def _get_content_or_404(content_id: int, user_id: int, db: Session) -> GeneratedContent:
@@ -97,17 +103,9 @@ def _run_generation(
             db.rollback()
     finally:
         db.close()
-        # 释放并清理锁，防止字典无限增长
-        key = (user_id, brand_id)
+        # 释放 Redis 分布式锁
         try:
-            with _generation_locks_guard:
-                lock = _generation_locks.get(key)
-                if lock:
-                    try:
-                        lock.release()
-                    except RuntimeError:
-                        pass
-                    _generation_locks.pop(key, None)
+            _release_generation_lock(user_id, brand_id)
         except Exception:
             pass
 
@@ -115,8 +113,7 @@ def _run_generation(
 @router.post("/generate", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
 def generate_content(
     body: ContentGenerateRequest,
-    user: User = Depends(require_feature("content_generation")),
-    _quota: User = Depends(require_quota("content")),
+    user: User = Depends(require_feature_with_quota("content_generation", "content")),
     db: Session = Depends(get_db),
 ):
     brand = db.query(Brand).filter(
@@ -134,8 +131,7 @@ def generate_content(
                 detail=f"引擎 {body.engine} 仅 Agency 计划可用，请升级或切换至其他引擎",
             )
 
-    lock = _get_generation_lock(user.id, body.brand_id)
-    if not lock.acquire(blocking=False):
+    if not _acquire_generation_lock(user.id, body.brand_id):
         raise HTTPException(status_code=409, detail="已有内容正在生成中，请稍候")
 
     try:
@@ -162,10 +158,10 @@ def generate_content(
         db.commit()
         db.refresh(content)
     except HTTPException:
-        lock.release()
+        _release_generation_lock(user.id, body.brand_id)
         raise
     except Exception:
-        lock.release()
+        _release_generation_lock(user.id, body.brand_id)
         raise
 
     # 使用 Celery 异步任务

@@ -3,7 +3,7 @@
  * 类型化的 API 请求函数
  */
 
-import { getToken, removeToken } from '@/app/services/auth';
+import { getToken, removeToken } from '@/services/auth';
 import type {
   ApiResponse,
   LoginRequest,
